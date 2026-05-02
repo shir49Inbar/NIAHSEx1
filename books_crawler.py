@@ -1,76 +1,357 @@
+import os
+import re
+import json
+import time
+import math
+import pandas as pd
+
+from bs4 import BeautifulSoup
+from urllib.parse import urljoin
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
-from bs4 import BeautifulSoup
-from urllib.parse import urljoin, urlparse
-import time
+
 
 BASE_URL = "https://www.bookdelivery.com/"
+COUNTRY_NAME = "Israel"
+MAX_PAGES_PER_CATEGORY = 5
+OUTPUT_DIR = "output"
+EXCHANGE_RATE = 3.01
 
-options = Options()
-options.add_argument("--start-maximized")
 
-driver = webdriver.Chrome(options=options)
+def clean_text(text):
+    if not text:
+        return None
+    return re.sub(r"\s+", " ", text).strip()
 
-try:
+
+def ceil_2(x):
+    if x is None:
+        return None
+    return math.ceil(float(x) * 100) / 100
+
+
+def get_soup(driver):
+    return BeautifulSoup(driver.page_source, "html.parser")
+
+
+def open_israel_site(driver):
     print("Opening site...", flush=True)
     driver.get(BASE_URL)
 
-    print("Current title:", repr(driver.title), flush=True)
+    print("\nSolve Human Verification manually if needed.")
+    input("When the country page is loaded, press ENTER here...")
 
-    print("\nLook at the Chrome window.", flush=True)
-    print("If you see Human Verification, solve it manually.", flush=True)
-    input("Only after the REAL homepage loads, press ENTER here...")
+    soup = get_soup(driver)
 
+    israel_url = None
+    for a in soup.find_all("a", href=True):
+        text = clean_text(a.get_text(" ", strip=True))
+        if text == COUNTRY_NAME:
+            israel_url = urljoin(BASE_URL, a["href"])
+            break
+
+    if not israel_url:
+        raise RuntimeError("Could not find Israel link.")
+
+    print("Opening Israel site:", israel_url)
+    driver.get(israel_url)
     time.sleep(3)
 
-    html = driver.page_source
-    soup = BeautifulSoup(html, "html.parser")
-    links = soup.find_all("a", href=True)
 
-    print("\n========== PAGE DEBUG ==========")
-    print("Current URL:", driver.current_url)
-    print("Title:", repr(driver.title))
-    print("HTML length:", len(html))
-
-    print("\n========== LINKS DEBUG ==========")
-    print("Total links:", len(links))
-
-    for i, a in enumerate(links[:150]):
-        text = a.get_text(" ", strip=True)
-        href = a.get("href")
-        full_url = urljoin(BASE_URL, href)
-
-        if text:
-            print(f"[{i}] {repr(text)} -> {full_url}")
-
-    print("\n========== POSSIBLE CATEGORIES ==========")
-
+def extract_category_links(driver):
+    soup = get_soup(driver)
     categories = {}
 
-    for a in links:
-        text = a.get_text(" ", strip=True)
-        href = a.get("href", "")
-        full_url = urljoin(BASE_URL, href)
+    print("\n========== CATEGORY LINKS ==========")
+
+    for a in soup.find_all("a", href=True):
+        text = clean_text(a.get_text(" ", strip=True))
+        full_url = urljoin(BASE_URL, a["href"])
+        href_lower = full_url.lower()
 
         if not text:
             continue
 
-        if urlparse(full_url).netloc != urlparse(BASE_URL).netloc:
-            continue
+        # Real Israel-English category pages:
+        # https://www.bookdelivery.com/il-en/books/arts
+        if "bookdelivery.com/il-en/books/" in href_lower:
+            # avoid sub-subject pages like /subject-...
+            if "/subject-" in href_lower:
+                continue
 
-        href_lower = href.lower()
-
-        if (
-            "category" in href_lower
-            or "categories" in href_lower
-            or "subject" in href_lower
-            or "browse" in href_lower
-            or "books" in href_lower
-        ):
             categories[text] = full_url
             print(text, "->", full_url)
 
-    print("\nFound possible categories:", len(categories))
+    print(f"\nFound {len(categories)} categories.")
+    return categories
 
-finally:
-    driver.quit()
+
+def build_category_page_url(category_url, page_num):
+    if page_num == 1:
+        return category_url
+
+    sep = "&" if "?" in category_url else "?"
+    return f"{category_url}{sep}page={page_num}"
+
+
+def extract_book_links_from_category_page(driver, page_url):
+    print("\nOpening category page:", page_url)
+    driver.get(page_url)
+    time.sleep(3)
+
+    soup = get_soup(driver)
+    book_links = set()
+
+    for a in soup.find_all("a", href=True):
+        full_url = urljoin(BASE_URL, a["href"])
+        href_lower = full_url.lower()
+
+        # Real book pages:
+        # /il-en/book-berserk-deluxe-volume-1/9781506711980/p/51598673
+        if "/book-" in href_lower and "/p/" in href_lower:
+            book_links.add(full_url)
+
+    print("Book links found:", len(book_links))
+
+    for url in list(book_links)[:10]:
+        print("BOOK:", url)
+
+    return list(book_links)
+
+
+def extract_price(text):
+    if not text:
+        return None
+
+    text = text.replace(",", ".")
+    match = re.search(r"(\d+(?:\.\d+)?)", text)
+    return float(match.group(1)) if match else None
+
+
+def find_field_by_label(soup, label):
+    lines = [clean_text(x) for x in soup.get_text("\n", strip=True).split("\n")]
+    lines = [x for x in lines if x]
+
+    label_lower = label.lower()
+
+    for i, line in enumerate(lines):
+        if label_lower == line.lower() or label_lower in line.lower():
+            if i + 1 < len(lines):
+                return lines[i + 1]
+
+    return None
+
+
+def extract_book_data(driver, book_url, category_name):
+    print("Opening book:", book_url)
+    driver.get(book_url)
+    time.sleep(2)
+
+    soup = get_soup(driver)
+    page_text = soup.get_text("\n", strip=True)
+
+    h1 = soup.find("h1")
+    title = clean_text(h1.get_text(" ", strip=True)) if h1 else None
+
+    if not title and soup.title:
+        title = clean_text(soup.title.get_text(" ", strip=True))
+
+    authors = find_field_by_label(soup, "Author")
+    language = find_field_by_label(soup, "Language")
+    book_format = find_field_by_label(soup, "Format")
+    dimensions = find_field_by_label(soup, "Dimensions")
+    weight = find_field_by_label(soup, "Weight")
+    isbn = find_field_by_label(soup, "ISBN")
+
+    year = None
+    year_match = re.search(r"\b(19|20)\d{2}\b", page_text)
+    if year_match:
+        year = int(year_match.group(0))
+
+    price_nis = None
+    for txt in soup.find_all(string=re.compile(r"(₪|NIS|ILS|\d+\.\d{2})")):
+        txt = str(txt)
+        if "₪" in txt or "NIS" in txt or "ILS" in txt:
+            price_nis = ceil_2(extract_price(txt))
+            break
+
+    price_usd = ceil_2(price_nis / EXCHANGE_RATE) if price_nis else None
+
+    synopsis = None
+    for label in ["Synopsis", "Description", "Book Description"]:
+        found = soup.find(string=re.compile(label, re.I))
+        if found:
+            parent = found.find_parent()
+            if parent:
+                next_el = parent.find_next()
+                if next_el:
+                    synopsis = clean_text(next_el.get_text(" ", strip=True))
+                    break
+
+    synopsis_length = len(synopsis) if synopsis else 0
+
+    reviews = 0
+    review_match = re.search(r"(\d+)\s+reviews?", page_text, re.I)
+    if review_match:
+        reviews = int(review_match.group(1))
+
+    star_rating = "None" if reviews == 0 else None
+
+    return {
+        "url": book_url,
+        "Title": title,
+        "Category": category_name,
+        "Categories": category_name,
+        "Authors": authors,
+        "Price in NIS": price_nis,
+        "Price in USD": price_usd,
+        "Year": year,
+        "Synopsis": synopsis,
+        "Synopsis length": synopsis_length,
+        "StarRating": star_rating,
+        "NumberOfReviews": reviews,
+        "Language": language,
+        "Format": book_format,
+        "Dimensions": dimensions,
+        "Dimensions unit": None,
+        "Weight": weight,
+        "Weight unit": None,
+        "ISBN/ISBN13": isbn,
+    }
+
+
+def save_json_records(df, path):
+    records = []
+
+    for i, row in df.iterrows():
+        record = {
+            "id": str(i + 1),
+            "url": row.get("url"),
+        }
+
+        for col, val in row.items():
+            if pd.isna(val):
+                continue
+            record[col] = val
+
+        records.append(record)
+
+    data = {"records": {"record": records}}
+
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+
+
+def main():
+    os.makedirs(OUTPUT_DIR, exist_ok=True)
+
+    options = Options()
+    options.add_argument("--start-maximized")
+
+    driver = webdriver.Chrome(options=options)
+
+    all_books = []
+    seen_books = set()
+
+    try:
+        open_israel_site(driver)
+
+        categories = extract_category_links(driver)
+
+        if not categories:
+            print("No categories found. Stop.")
+            return
+
+        for category_name, category_url in categories.items():
+            print(f"\n\n========== CATEGORY: {category_name} ==========")
+
+            for page_num in range(1, MAX_PAGES_PER_CATEGORY + 1):
+                page_url = build_category_page_url(category_url, page_num)
+
+                book_links = extract_book_links_from_category_page(driver, page_url)
+
+                if not book_links:
+                    print("No book links found, stopping this category.")
+                    break
+
+                for book_url in book_links:
+                    if book_url in seen_books:
+                        continue
+
+                    seen_books.add(book_url)
+
+                    try:
+                        book_data = extract_book_data(driver, book_url, category_name)
+                        all_books.append(book_data)
+                        print("Collected:", book_data["Title"])
+                    except Exception as e:
+                        print("Failed to parse book:", book_url)
+                        print("Error:", e)
+
+                    time.sleep(3)
+
+        if not all_books:
+            print("No books collected. Stopping before DataFrame processing.")
+            return
+
+        df_books = pd.DataFrame(all_books)
+
+        numeric_columns = [
+            "Price in NIS",
+            "Price in USD",
+            "Year",
+            "Synopsis length",
+            "NumberOfReviews",
+        ]
+
+        for col in numeric_columns:
+            df_books[col] = pd.to_numeric(df_books[col], errors="coerce")
+
+        df_books.to_csv(
+            os.path.join(OUTPUT_DIR, "books_raw.csv"),
+            index=False,
+            encoding="utf-8-sig",
+        )
+
+        save_json_records(
+            df_books,
+            os.path.join(OUTPUT_DIR, "books_raw.json"),
+        )
+
+        save_json_records(
+            df_books.head(1),
+            os.path.join(OUTPUT_DIR, "books_example.json"),
+        )
+
+        driver.get(df_books.iloc[0]["url"])
+        time.sleep(2)
+        driver.save_screenshot(os.path.join(OUTPUT_DIR, "books_example.jpg"))
+
+        before_sort = df_books.head(10)
+        before_sort.to_csv(
+            os.path.join(OUTPUT_DIR, "books_before_sort.csv"),
+            index=False,
+            encoding="utf-8-sig",
+        )
+
+        after_sort = df_books.sort_values(by="Title", ascending=True).head(10)
+        after_sort.to_csv(
+            os.path.join(OUTPUT_DIR, "books_after_sort.csv"),
+            index=False,
+            encoding="utf-8-sig",
+        )
+
+        print("\n========== FIRST 10 BEFORE SORT ==========")
+        print(before_sort)
+
+        print("\n========== FIRST 10 AFTER SORT ==========")
+        print(after_sort)
+
+        print("\nDone. Files saved in output/")
+
+    finally:
+        driver.quit()
+
+
+if __name__ == "__main__":
+    main()
