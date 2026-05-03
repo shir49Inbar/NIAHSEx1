@@ -4,6 +4,8 @@ import json
 import time
 import math
 import pandas as pd
+import statistics
+import numpy as np
 
 from bs4 import BeautifulSoup
 from urllib.parse import urljoin
@@ -35,6 +37,9 @@ def get_soup(driver):
 
 
 def open_israel_site(driver):
+    """
+    This function is choosing the Israel page according to it's url
+    """
     print("Opening site...", flush=True)
     driver.get(BASE_URL)
 
@@ -59,11 +64,15 @@ def open_israel_site(driver):
 
 
 def extract_category_links(driver):
+    """
+    This function extracts all the links of the categories
+    """
     soup = get_soup(driver)
     categories = {}
 
     print("\n========== CATEGORY LINKS ==========")
 
+    # Building the url of each category
     for a in soup.find_all("a", href=True):
         text = clean_text(a.get_text(" ", strip=True))
         full_url = urljoin(BASE_URL, a["href"])
@@ -87,6 +96,9 @@ def extract_category_links(driver):
 
 
 def build_category_page_url(category_url, page_num):
+    """
+    This function builds the category page url
+    """
     if page_num == 1:
         return category_url
 
@@ -95,6 +107,9 @@ def build_category_page_url(category_url, page_num):
 
 
 def extract_book_links_from_category_page(driver, page_url):
+    """
+    This function extracts the links of books from the category page
+    """
     print("\nOpening category page:", page_url)
     driver.get(page_url)
     time.sleep(3)
@@ -143,6 +158,10 @@ def find_field_by_label(soup, label):
 
 
 def extract_book_data(driver, book_url, category_name):
+    """
+    This function extracts all needed data from the book page
+    """
+    total_nis = []
     print("Opening book:", book_url)
     driver.get(book_url)
     time.sleep(2)
@@ -173,6 +192,7 @@ def extract_book_data(driver, book_url, category_name):
         txt = str(txt)
         if "₪" in txt or "NIS" in txt or "ILS" in txt:
             price_nis = ceil_2(extract_price(txt))
+            total_nis.append(price_nis)
             break
 
     price_usd = ceil_2(price_nis / EXCHANGE_RATE) if price_nis else None
@@ -197,6 +217,8 @@ def extract_book_data(driver, book_url, category_name):
 
     star_rating = "None" if reviews == 0 else None
 
+    median = statistics.median(total_nis)
+
     return {
         "url": book_url,
         "Title": title,
@@ -216,8 +238,17 @@ def extract_book_data(driver, book_url, category_name):
         "Dimensions unit": None,
         "Weight": weight,
         "Weight unit": None,
-        "ISBN/ISBN13": isbn,
+        "ISBN/ISBN13": isbn
     }
+
+def create_new_features(file_location):
+    df = pd.read_csv(file_location)
+    prices_list = df['Price in NIS'].to_list()
+    median_calc = statistics.median(prices_list)
+    df['IsExpensive'] = np.where(df["Price in NIS"] > median_calc, 1, 0)
+
+    df['NumberOfAuthors'] = df['Authors'].str.split(',').str.len()
+    return df
 
 
 def save_json_records(df, path):
@@ -254,6 +285,7 @@ def main():
     seen_books = set()
 
     try:
+        # Step 1
         open_israel_site(driver)
 
         categories = extract_category_links(driver)
@@ -262,6 +294,7 @@ def main():
             print("No categories found. Stop.")
             return
 
+        # Traversing all the categories
         for category_name, category_url in categories.items():
             print(f"\n\n========== CATEGORY: {category_name} ==========")
 
@@ -293,7 +326,9 @@ def main():
         if not all_books:
             print("No books collected. Stopping before DataFrame processing.")
             return
+    
 
+        # Step 2
         df_books = pd.DataFrame(all_books)
 
         numeric_columns = [
@@ -327,6 +362,7 @@ def main():
         time.sleep(2)
         driver.save_screenshot(os.path.join(OUTPUT_DIR, "books_example.jpg"))
 
+        # Step 3
         before_sort = df_books.head(10)
         before_sort.to_csv(
             os.path.join(OUTPUT_DIR, "books_before_sort.csv"),
@@ -346,6 +382,26 @@ def main():
 
         print("\n========== FIRST 10 AFTER SORT ==========")
         print(after_sort)
+
+        ## Step 4
+        df_n_features = create_new_features("output/books_raw.csv")
+        df_n_features.to_csv(os.path.join(OUTPUT_DIR, "books_processed.csv"),
+            index=False,
+            encoding="utf-8-sig",
+        )
+
+        save_json_records(
+            df_n_features.head(1),
+            os.path.join(OUTPUT_DIR, "books_processed.json"),
+        )
+
+        process_ten_rows = df_n_features.head(10)
+        print(process_ten_rows)
+        process_ten_rows.to_csv(
+            os.path.join(OUTPUT_DIR, "books processed preview.csv"),
+            index=False,
+            encoding="utf-8-sig",
+        )
 
         print("\nDone. Files saved in output/")
 
