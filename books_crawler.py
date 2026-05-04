@@ -6,6 +6,7 @@ import math
 import pandas as pd
 import statistics
 import numpy as np
+import json
 
 from bs4 import BeautifulSoup
 from urllib.parse import urljoin
@@ -251,6 +252,7 @@ def create_new_features(file_location):
     return df
 
 
+
 def save_json_records(df, path):
     records = []
 
@@ -272,6 +274,133 @@ def save_json_records(df, path):
     with open(path, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
 
+
+def summarised_statistics():
+    try:
+        with open("output/books_processed.json", 'r',encoding='utf-8') as file:
+            data = json.load(file)
+            records=data["records"]
+            record=records["record"]
+            summary={
+    "Statistic": ["Mean", "Standard Deviation", "Min", "Max", "Median", "Total Rows"],
+
+    "Price in USD": [
+        calculate_mean("Price in USD", record),
+        calculate_stdev("Price in USD", record),
+        find_min("Price in USD", record),
+        find_max("Price in USD", record),
+        calculate_median("Price in USD", record),
+        num_of_rows("Price in USD",record) # Total rows for the whole dataset
+    ],
+
+    "Year": [
+        calculate_mean("Year", record),
+        calculate_stdev("Year", record),
+        find_min("Year", record),
+        find_max("Year", record),
+        calculate_median("Year", record),
+        num_of_rows("Year",record)
+    ],
+
+    "StarRating": [
+        calculate_mean("StarRating", record),
+        calculate_stdev("StarRating", record),
+        find_min("StarRating", record),
+        find_max("StarRating", record),
+        calculate_median("StarRating", record),
+        num_of_rows("StarRating",record)
+    ],
+
+    "NumberOfReviews": [
+        calculate_mean("NumberOfReviews", record),
+        calculate_stdev("NumberOfReviews", record),
+        find_min("NumberOfReviews", record),
+        find_max("NumberOfReviews", record),
+        calculate_median("NumberOfReviews", record),
+        num_of_rows("NumberOfReviews",record)
+    ],
+
+    "NumberOfAuthors": [
+        calculate_mean("NumberOfAuthors", record),
+        calculate_stdev("NumberOfAuthors", record),
+        find_min("NumberOfAuthors", record),
+        find_max("NumberOfAuthors", record),
+        calculate_median("NumberOfAuthors", record),
+       num_of_rows("NumberOfAuthors",record)
+    ]
+
+        }
+        df= pd.DataFrame(summary)
+        df.to_csv("output/books_summary.csv", index=False)
+        print("books?_summary created")
+        
+    except FileNotFoundError:
+        print("Error: The file 'books_processed.json' was not found.")
+
+def num_of_rows(key,record):
+    row_num=0.0
+    for book_info in record:
+        if(key in book_info and book_info[key] is not None):
+            row_num+=1
+    return row_num
+
+def find_min(key,record):
+
+    min=None
+    for book_info in record:
+        if (key in book_info and book_info[key] is not None):
+            if (book_info[key] == "None"):
+                val=0
+            else:
+                val=book_info[key]
+            if(min is None or val<=min):
+                min=val
+    return min
+
+def find_max(key,record):
+    max =0.0
+    for book_info in record:
+        if (key in book_info and book_info[key] is not None):
+            if (book_info[key] == "None"):
+                val=0
+            else:
+                val=book_info[key]
+            if (val>=max):
+                max = val
+    return max
+
+def calculate_mean(key,record):
+      key_val_list=[]
+      for book_info in record:
+          if (key in book_info and book_info[key] is not None):
+            if (book_info[key] == "None"):
+                val=0
+            else:
+                val=book_info[key]
+            key_val_list.append(val)
+      return statistics.mean(key_val_list)
+
+def calculate_median(key, record):
+    key_val_list = []
+    for book_info in record:
+        if (key in book_info and book_info[key] is not None):
+            if (book_info[key] == "None"):
+                val=0
+            else:
+                val=book_info[key]
+            key_val_list.append(val)
+    return statistics.median(key_val_list)
+
+def calculate_stdev(key, record):
+    key_val_list = []
+    for book_info in record:
+        if (key in book_info and book_info[key] is not None):
+            if (book_info[key] == "None"):
+                val=0
+            else:
+                val=book_info[key]
+            key_val_list.append(val)
+    return statistics.stdev(key_val_list)
 
 def main():
     os.makedirs(OUTPUT_DIR, exist_ok=True)
@@ -402,6 +531,7 @@ def main():
             index=False,
             encoding="utf-8-sig",
         )
+        summarised_statistics()
 
         print("\nDone. Files saved in output/")
 
@@ -411,3 +541,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
