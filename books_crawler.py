@@ -591,6 +591,7 @@ def extract_categories(soup, fallback_category):
                     break
 
                 if value not in categories:
+                    value = value.replace(" / ", ", ")
                     categories.append(value)
 
             if categories:
