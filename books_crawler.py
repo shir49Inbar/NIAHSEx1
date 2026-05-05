@@ -543,34 +543,60 @@ def extract_title_and_authors(soup):
 
     return title, authors
 
-def extract_categories(soup, fallback_category):
-    categories = []
+# def extract_categories(soup, fallback_category):
+#     categories_text = find_field_by_label(soup, ["Categories", "Category"])
 
-    breadcrumb_selectors = [
-        "ol.breadcrumb a",
-        "ul.breadcrumb a",
-        ".breadcrumb a",
-        "[class*=breadcrumb] a",
+#     if categories_text:
+#         parts = re.split(r",|\n|;", categories_text)
+#         parts = [clean_text(p) for p in parts if clean_text(p)]
+
+#         if parts:
+#             return ", ".join(parts)
+
+#     return fallback_category
+
+def extract_categories(soup, fallback_category):
+    lines = [
+        clean_text(x)
+        for x in soup.get_text("\n", strip=True).split("\n")
+    ]
+    lines = [x for x in lines if x]
+
+    stop_words = {
+        "type", "author", "publisher", "language", "page", "format",
+        "dimensions", "weight", "isbn", "isbn13",
+        "synopsis", "recommended books new", "recommended books",
+        "new", "customer reviews", "my orders", "change country",
+        "help", "add to cart", "share", "copy link", "link copied!"
+    }
+
+    garbage_fragments = [
+        "affiliate", "whatsapp", "facebook", "pinterest",
+        "linkedin", "copy", "http", "bookdelivery.com",
+        "author", "recommended", "customer reviews"
     ]
 
-    for selector in breadcrumb_selectors:
-        for a in soup.select(selector):
-            txt = clean_text(a.get_text(" ", strip=True))
-            if not txt:
-                continue
+    for i, line in enumerate(lines):
+        if line.lower().strip(":") == "categories":
+            categories = []
 
-            low = txt.lower()
-            if low in {"home", "books", "bookdelivery israel"}:
-                continue
+            for j in range(i + 1, min(i + 15, len(lines))):
+                value = lines[j]
+                low = value.lower().strip(":")
 
-            if txt not in categories:
-                categories.append(txt)
+                if low in stop_words:
+                    break
 
-    if fallback_category not in categories:
-        categories.insert(0, fallback_category)
+                if any(g in low for g in garbage_fragments):
+                    break
 
-    return ", ".join(categories)
+                if value not in categories:
+                    categories.append(value)
 
+            if categories:
+                return ", ".join(categories)
+
+    return fallback_category
 
 def extract_price_nis(soup):
     """
