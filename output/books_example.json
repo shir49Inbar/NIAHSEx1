@@ -1,0 +1,28 @@
+{
+  "records": {
+    "record": [
+      {
+        "id": "1",
+        "url": "https://www.bookdelivery.com/il-en/book-89-color-coded-flash-cards-flash-cards/9780739015575/p/4946544",
+        "Title": "89 color-coded flash cards: flash cards",
+        "Category": "Arts",
+        "Categories": "Music theory and musicology, Piano",
+        "Authors": "Alfred Music",
+        "Price in NIS": 45.77,
+        "Price in USD": 15.21,
+        "Year": 1922.0,
+        "Synopsis": "Includes all notes, symbols, and terms needed for the first two years of study on any musical instrument. Cards are color-coded by category and are numbered on the back.",
+        "Synopsis length": 169,
+        "StarRating": "None",
+        "NumberOfReviews": 0,
+        "Language": "English",
+        "Format": "Cards",
+        "Dimensions": "13.2,10.7,2.3",
+        "Dimensions unit": "cm",
+        "Weight": 0.25,
+        "Weight unit": "kg",
+        "ISBN/ISBN13": "0739015575"
+      }
+    ]
+  }
+}

@@ -179,26 +179,6 @@ def make_driver():
     driver = webdriver.Chrome(options=chrome_options)
     return driver
 
-
-# def make_session():
-#     session = requests.Session()
-#     session.headers.update({
-#         "User-Agent": USER_AGENT,
-#         "Accept": (
-#             "text/html,application/xhtml+xml,application/xml;q=0.9,"
-#             "image/avif,image/webp,image/apng,*/*;q=0.8"
-#         ),
-#         "Accept-Language": "en-US,en;q=0.9,he;q=0.8",
-#         "Accept-Encoding": "gzip, deflate, br",
-#         "Connection": "keep-alive",
-#         "Upgrade-Insecure-Requests": "1",
-#         "Sec-Fetch-Dest": "document",
-#         "Sec-Fetch-Mode": "navigate",
-#         "Sec-Fetch-Site": "same-origin",
-#         "Sec-Fetch-User": "?1",
-#     })
-#     return session
-
 def make_session():
     session = requests.Session()
     session.headers.update({
@@ -274,51 +254,6 @@ def refresh_cookies_with_selenium(driver, session, url):
 # -----------------------------
 # requests fetcher with strict validation
 # -----------------------------
-
-# def fetch_html(session, driver, url, validator=None, allow_manual_refresh=True):
-#     """
-#     Fetch with requests. If the returned page is bad, refresh cookies from Selenium
-#     and retry the SAME url. This avoids collecting 'JavaScript is disabled' as data.
-#     """
-#     url = normalize_url(url)
-
-#     attempt = 0
-#     while True:
-#         attempt += 1
-#         try:
-#             polite_sleep()
-#             response = session.get(url, timeout=40, allow_redirects=True)
-#             html = response.text
-
-#             ok_status = 200 <= response.status_code < 300
-#             ok_html = not is_bad_html(html)
-#             ok_validator = True if validator is None else validator(html)
-
-#             if ok_status and ok_html and ok_validator:
-#                 return html
-
-#             print("\nBad response from requests:")
-#             print("URL:", url)
-#             print("Status:", response.status_code)
-#             print("Attempt:", attempt)
-#             print("Page title:", get_page_title(html))
-
-#         except requests.RequestException as e:
-#             print("\nRequests error:")
-#             print("URL:", url)
-#             print("Attempt:", attempt)
-#             print("Error:", e)
-
-#         if attempt < MAX_AUTO_RETRIES:
-#             print("Retrying same URL after delay...")
-#             continue
-
-#         if allow_manual_refresh:
-#             refresh_cookies_with_selenium(driver, session, url)
-#             attempt = 0
-#             continue
-
-#         raise RuntimeError(f"Could not fetch valid HTML from {url}")
 
 
 def fetch_html(session, driver, url, validator=None, allow_manual_refresh=True):
@@ -543,17 +478,6 @@ def extract_title_and_authors(soup):
 
     return title, authors
 
-# def extract_categories(soup, fallback_category):
-#     categories_text = find_field_by_label(soup, ["Categories", "Category"])
-
-#     if categories_text:
-#         parts = re.split(r",|\n|;", categories_text)
-#         parts = [clean_text(p) for p in parts if clean_text(p)]
-
-#         if parts:
-#             return ", ".join(parts)
-
-#     return fallback_category
 
 def extract_categories(soup, fallback_category):
     lines = [
@@ -711,72 +635,42 @@ def extract_year(soup):
 
 
 def extract_synopsis(soup):
-    labels = ["Synopsis", "Description", "Book Description", "Overview", "About the Book"]
-
-    # Try headings/labels and take the next meaningful block.
-    for tag in soup.find_all(["h2", "h3", "h4", "strong", "b", "div", "span"]):
-        txt = clean_text(tag.get_text(" ", strip=True))
-        if not txt:
-            continue
-
-        if any(label.lower() in txt.lower() for label in labels):
-            for next_el in tag.find_all_next(["p", "div"], limit=8):
-                val = clean_text(next_el.get_text(" ", strip=True))
-                if val and len(val) > 40 and not any(label.lower() == val.lower() for label in labels):
-                    return val
-
-    # Fallback: meta description.
-    meta = soup.find("meta", attrs={"name": "description"})
-    if meta and meta.get("content"):
-        return clean_text(meta["content"])
-
+    target = soup.find(id="texto-descripcion")
+    if target:
+        # Cleaning whitespace to get an accurate character count
+        text = re.sub(r"\s+", " ", target.get_text(" ", strip=True)).strip()
+        return text if text else None
     return None
 
-
 def extract_reviews_and_rating(soup):
-    text = soup.get_text(" ", strip=True)
 
-    reviews = 0
-    m = re.search(r"(\d+)\s+(?:customer\s+)?reviews?", text, re.I)
-    if m:
-        reviews = int(m.group(1))
-
-    if reviews == 0:
-        m = re.search(r"NumberOfReviews[^0-9]*(\d+)", str(soup), re.I)
-        if m:
-            reviews = int(m.group(1))
-
-    if reviews == 0:
+    eval_ul = soup.find('ul', class_='evaluacion')
+    if not eval_ul:
         return "None", 0
 
-    # Try direct rating like 4.35 out of 5.
-    rating_patterns = [
-        r"(\d+(?:\.\d+)?)\s*out of\s*5",
-        r"rating[^0-9]*(\d+(?:\.\d+)?)",
-        r"starRating[^0-9]*(\d+(?:\.\d+)?)",
-    ]
-
-    html_text = str(soup)
-    for pat in rating_patterns:
-        m = re.search(pat, html_text, re.I)
-        if m:
-            val = float(m.group(1))
-            if 0 <= val <= 5:
-                return ceil_2(val), reviews
-
-    # Try star distribution: 5 stars: 10, 4 stars: 2, etc.
     dist = {}
-    all_text = soup.get_text("\n", strip=True)
-    for star, count in re.findall(r"([1-5])\s*stars?.{0,30}?(\d+)", all_text, re.I):
-        dist[int(star)] = int(count)
+    total_reviews = 0
+    
+    for li in eval_ul.find_all('li'):
+        classes = " ".join(li.get('class', []))
+        match_star = re.search(r'stars-(\d)', classes)
+        if not match_star: continue
+        
+        star_level = int(match_star.group(1))
+        li_text = li.get_text(strip=True)
+        match_count = re.search(r'\((\d+)\)', li_text)
+        
+        if match_count:
+            count = int(match_count.group(1))
+            dist[star_level] = count
+            total_reviews += count
 
-    if dist:
-        total = sum(dist.values())
-        if total > 0:
-            weighted = sum(star * count for star, count in dist.items()) / total
-            return ceil_2(weighted), reviews
+    if total_reviews == 0: return "None", 0
 
-    return None, reviews
+    # Manual Weighted Average: (Sum of Stars * Count) / Total
+    weighted_sum = sum(star * count for star, count in dist.items())
+    raw_rating = weighted_sum / total_reviews
+    return ceil_2(raw_rating), total_reviews
 
 
 def split_dimensions(value):
