@@ -874,64 +874,7 @@ def create_new_features(file_location):
     )
 
     return df
-
-
-
-# def summarised_statistics(df):
-#     record = df.to_dict(orient="records")
-
-#     summary = {
-#         "Statistic": ["Mean", "Standard Deviation", "Min", "Max", "Median", "Total Rows"],
-
-#         "Price in USD": [
-#             calculate_mean("Price in USD", record),
-#             calculate_stdev("Price in USD", record),
-#             find_min("Price in USD", record),
-#             find_max("Price in USD", record),
-#             calculate_median("Price in USD", record),
-#             num_of_rows("Price in USD", record),
-#         ],
-
-#         "Year": [
-#             calculate_mean("Year", record),
-#             calculate_stdev("Year", record),
-#             find_min("Year", record),
-#             find_max("Year", record),
-#             calculate_median("Year", record),
-#             num_of_rows("Year", record),
-#         ],
-
-#         "StarRating": [
-#             calculate_mean("StarRating", record),
-#             calculate_stdev("StarRating", record),
-#             find_min("StarRating", record),
-#             find_max("StarRating", record),
-#             calculate_median("StarRating", record),
-#             num_of_rows("StarRating", record),
-#         ],
-
-#         "NumberOfReviews": [
-#             calculate_mean("NumberOfReviews", record),
-#             calculate_stdev("NumberOfReviews", record),
-#             find_min("NumberOfReviews", record),
-#             find_max("NumberOfReviews", record),
-#             calculate_median("NumberOfReviews", record),
-#             num_of_rows("NumberOfReviews", record),
-#         ],
-
-#         "NumberOfAuthors": [
-#             calculate_mean("NumberOfAuthors", record),
-#             calculate_stdev("NumberOfAuthors", record),
-#             find_min("NumberOfAuthors", record),
-#             find_max("NumberOfAuthors", record),
-#             calculate_median("NumberOfAuthors", record),
-#             num_of_rows("NumberOfAuthors", record),
-#         ],
-#     }
-
-#     summary_df = pd.DataFrame(summary)
-#     summary_df.to_csv("output/books_summary.csv", index=False, encoding="utf-8-sig")
-#     print("books_summary.csv created")
+           
 def summarised_statistics(df):
     cols = ["Price in USD", "Year", "StarRating", "NumberOfReviews", "NumberOfAuthors"]
     
